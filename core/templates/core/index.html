@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Calculadora Gauss-Jordan & Inversa</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <style>
+        .matrix-table input { 
+            width: 60px; 
+            text-align: center; 
+            margin: 2px;
+        }
+        .step-matrix-table td {
+            font-weight: bold;
+            text-align: center;
+            padding: 8px;
+            border: 1px solid #dee2e6;
+        }
+        .step-box {
+            border: 1px solid #007bff;
+            border-left: 5px solid #007bff;
+            padding: 15px;
+            margin-bottom: 20px;
+            background-color: #f8f9fa;
+        }
+        .result-matrix td {
+            font-size: 1.1rem;
+            text-align: center;
+        }
+        /* Color para la línea de separación visual en la matriz aumentada */
+        .separator-col {
+            border-right: 3px solid #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4 text-center text-primary">🔢 Calculadora Gauss-Jordan & Inversa</h1>
+
+        <div class="card p-3 mb-4 shadow-sm">
+            <form id="dimension-form" class="row g-3 align-items-end">
+                {% csrf_token %}
+                <div class="col-md-4">
+                    <label for="dimension" class="form-label">Dimensión de la matriz:</label>
+                    <select id="dimension" name="dimension" class="form-select">
+                        {% for d in range_dim %}
+                            <option value="{{ d }}" {% if d == 3 %}selected{% endif %}>{{ d }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 form-check form-switch d-flex align-items-center mb-2">
+                    <input class="form-check-input" type="checkbox" role="switch" id="is_inverse" name="is_inverse" style="height: 25px; width: 45px;">
+                    <label class="form-check-label ms-2" for="is_inverse">Calcular Matriz Inversa (A | I)</label>
+                </div>
+            </form>
+        </div>
+
+        <form method="POST" action="{% url 'index' %}" id="matrix-form">
+            {% csrf_token %}
+            <input type="hidden" name="dimension" id="hidden_dimension">
+            <input type="hidden" name="is_inverse" id="hidden_is_inverse">
+            
+            <h2 class="h5 mb-3 text-secondary">Introduce los datos de la Matriz <span id="matrix-label" class="fw-bold">A | B</span></h2>
+            
+            <div id="matrix-container" class="mb-3 overflow-auto">
+                </div>
+            
+            <button type="submit" class="btn btn-primary btn-lg w-100">Calcular Gauss-Jordan / Inversa</button>
+        </form>
+
+        <hr class="my-5">
+        
+        {% if results %}
+            {% if results.error %}
+                <div class="alert alert-danger" role="alert">
+                    🚨 **Error en el cálculo:** {{ results.error }}
+                </div>
+            {% else %}
+                <h2 class="mb-3 text-success">✅ Resultado Final</h2>
+                
+                <div class="table-responsive mb-4">
+                    <table class="table table-bordered result-matrix text-center align-middle">
+                        <tbody>
+                            {% for row in results.result %}
+                                <tr>
+                                    {% with total_cols=row|length %}
+                                    {% with cols_to_show=results.dimension|add:1 %}
+                                        
+                                        {% for cell in row %}
+                                            {% with column_index=forloop.counter0 %}
+
+                                                {# LÓGICA DE VISUALIZACIÓN: Si es Inversa (A|I) mostramos todas las 2N columnas. Si es GJ (A|B) solo mostramos las N+1 #}
+                                                {% if results.is_inverse or column_index < cols_to_show %}
+                                                    
+                                                    {# Determina dónde va la línea de separación #}
+                                                    {% if column_index == results.dimension %}
+                                                        <td class="p-2 separator-col">{{ cell|floatformat:4 }}</td>
+                                                    {% else %}
+                                                        <td class="p-2">{{ cell|floatformat:4 }}</td>
+                                                    {% endif %}
+
+                                                {% endif %}
+                                            {% endwith %}
+                                        {% endfor %}
+                                    {% endwith %}
+                                    {% endwith %}
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                {% if results.inverse %}
+                    <h3 class="h4 mt-4 text-secondary">Matriz Inversa (A⁻¹)</h3>
+                    <div class="table-responsive mb-4">
+                        <table class="table table-bordered result-matrix text-center align-middle">
+                            <tbody>
+                                {% for row in results.inverse %}
+                                    <tr>
+                                        {% for cell in row %}
+                                            <td class="p-2">{{ cell|floatformat:4 }}</td>
+                                        {% endfor %}
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% endif %}
+                
+                <a href="{% url 'export_to_excel' %}" class="btn btn-success btn-lg mb-5">
+                    ⬇️ Exportar Pasos a Excel
+                </a>
+
+                <div class="steps">
+                    <h2 class="mb-4 text-secondary">📑 Pasos Intermedios</h2>
+                    {% for step in results.steps %}
+                        <div class="step-box shadow-sm">
+                            <h5 class="text-primary">{{ step.description }}</h5>
+                            <p class="mb-3">Operación: <code>{{ step.operation|safe }}</code></p>
+                            
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered step-matrix-table">
+                                    <tbody>
+                                        {% for row in step.matrix %}
+                                            <tr>
+                                                {% with cols_to_show=results.dimension|add:1 %}
+
+                                                    {% for cell in row %}
+                                                        {% with column_index=forloop.counter0 %}
+                                                            
+                                                            {% if results.is_inverse or column_index < cols_to_show %}
+                                                                
+                                                                {% if column_index == results.dimension %}
+                                                                    <td class="separator-col">{{ cell|floatformat:4 }}</td>
+                                                                {% else %}
+                                                                    <td>{{ cell|floatformat:4 }}</td>
+                                                                {% endif %}
+                                                            {% endif %}
+
+                                                        {% endwith %}
+                                                    {% endfor %}
+                                                
+                                                {% endwith %}
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endif %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    
+    <script>
+        const dimensionSelect = document.getElementById('dimension');
+        const isInverseCheckbox = document.getElementById('is_inverse');
+        const matrixContainer = document.getElementById('matrix-container');
+        const matrixLabel = document.getElementById('matrix-label');
+        const hiddenDim = document.getElementById('hidden_dimension');
+        const hiddenInverse = document.getElementById('hidden_is_inverse');
+
+        function generateMatrixInputs() {
+            const N = parseInt(dimensionSelect.value);
+            const isInverse = isInverseCheckbox.checked;
+            
+            // Número de columnas de INPUT: N para Inversa, N+1 para Gauss-Jordan
+            const cols = isInverse ? N : N + 1; 
+
+            // Actualizar inputs ocultos y etiqueta (CORRECCIÓN VISUAL AQUÍ)
+            hiddenDim.value = N;
+            hiddenInverse.value = isInverse ? 'on' : '';
+            matrixLabel.textContent = isInverse ? 'A (Se asume B=I)' : 'A | B';
+
+            let tableHTML = '<table class="matrix-table">';
+            for (let i = 0; i < N; i++) {
+                tableHTML += '<tr>';
+                for (let j = 0; j < cols; j++) {
+                    // Agrega la clase 'separator-col' a la columna del vector B
+                    const isSeparator = !isInverse && j === N;
+                    const cellClass = isSeparator ? 'separator-col' : '';
+
+                    tableHTML += `<td class="${cellClass}">
+                                    <input type="text" name="cell_${i}_${j}" class="form-control" value="0" required>
+                                  </td>`;
+                }
+                tableHTML += '</tr>';
+            }
+            matrixHTML = `<div class="table-responsive">${tableHTML}</div>`;
+            matrixContainer.innerHTML = matrixHTML;
+        }
+
+        // Event Listeners
+        dimensionSelect.addEventListener('change', generateMatrixInputs);
+        isInverseCheckbox.addEventListener('change', generateMatrixInputs);
+
+        // Generar la matriz inicial al cargar la página
+        generateMatrixInputs();
+    </script>
+</body>
+</html>
